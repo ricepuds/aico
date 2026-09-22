@@ -6,7 +6,7 @@ import { copyText } from "@/lib/clipboard";
 import { Modal } from "./modal";
 
 export function MockInterview({ university, department, cases }: { university: string; department: string; cases: CaseSummary[] }) {
-  const [mode, setMode] = useState<InterviewMode>("basic");
+  const [mode, setMode] = useState<InterviewMode>("studentRecord");
   const [preview, setPreview] = useState(false);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<{ text: string; error: boolean; link?: boolean } | null>(null);
@@ -63,6 +63,7 @@ export function MockInterview({ university, department, cases }: { university: s
         <span><b>{interviewModes[key].label}</b><small>{interviewModes[key].description}</small></span>
       </label>)}
     </fieldset>
+    <p className="empty-hint">ChatGPT에서 먼저 생기부 유무를 확인해요. 있으면 생기부와 사례집을 함께, 없으면 사례집으로 면접을 진행합니다.</p>
     {details.loading && <p role="status">모의면접 질문을 불러오고 있습니다.</p>}
     {details.error && <p role="alert">{details.error} <button className="btn" onClick={details.retry}>질문 다시 불러오기</button></p>}
     {!ready && !details.loading && !details.error && <p className="empty-hint">{!university || !department ? "대학과 학과를 검색 목록의 이름으로 선택하면 시작할 수 있어요." : "현재 조건에 참고할 질문이 없습니다. 학년도나 검색 조건을 바꿔 주세요."}</p>}

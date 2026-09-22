@@ -16,10 +16,13 @@ test("filter → preview → real clipboard → ChatGPT tab; no AI API request",
   // Verify the destination without depending on ChatGPT authentication or bot checks.
   await context.route("https://chatgpt.com/**", route => route.fulfill({ contentType: "text/html", body: "<title>ChatGPT test destination</title>" }));
   await selectGachon(page);
-  await page.getByLabel("전공 심화 면접", { exact: false }).check();
+  await expect(page.getByRole("radio", { name: /학생부 면접/ })).toBeChecked();
+  await page.getByRole("radio", { name: /제시문 면접/ }).check();
   await page.getByRole("button", { name: "프롬프트 미리보기" }).click();
   const preview = page.getByLabel("생성된 모의면접 프롬프트");
-  await expect(preview).toHaveValue(/전공 지식과 프로젝트의 원리/);
+  await expect(preview).toHaveValue(/면접 유형: 제시문 면접/);
+  await expect(preview).toHaveValue(/창작 연습용 제시문/);
+  await expect(preview).toHaveValue(/참고할 학교생활기록부\(생기부\)가 있나요\?/);
   const expected = await preview.inputValue();
   await page.getByRole("button", { name: "닫기", exact: true }).click();
   const popupPromise = page.waitForEvent("popup");
@@ -64,9 +67,9 @@ test("blocked popup still copies and offers a direct link", async ({ page, conte
 
 test("filter changes invalidate stale selections; modes, details and printing work", async ({ page }) => {
   await selectGachon(page);
-  await page.getByLabel("압박 면접", { exact: false }).check();
+  await page.getByRole("radio", { name: /기본인성 면접/ }).check();
   await page.getByRole("button", { name: "프롬프트 미리보기" }).click();
-  await expect(page.getByLabel("생성된 모의면접 프롬프트")).toHaveValue(/무례하거나 공격적인 표현/);
+  await expect(page.getByLabel("생성된 모의면접 프롬프트")).toHaveValue(/태도와 성찰, 의사소통을 중심으로 평가/);
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "후기 자세히 보기" }).click();
   await expect(page.getByRole("dialog")).toContainText("다익스트라");
@@ -102,11 +105,17 @@ test("pagination and select-all include the entire filtered result", async ({ pa
 test("mobile controls and preview fit without horizontal overflow", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await selectGachon(page);
+  await expect(page.getByRole("radio")).toHaveCount(3);
+  for (const name of [/학생부 면접/, /제시문 면접/, /기본인성 면접/]) {
+    await expect(page.getByRole("radio", { name })).toBeVisible();
+  }
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.getByRole("button", { name: "프롬프트 미리보기" }).click();
   const box = await page.getByRole("dialog").boundingBox();
   expect(box?.width).toBeLessThanOrEqual(390);
   await expect(page.getByLabel("생성된 모의면접 프롬프트")).toBeVisible();
+  await expect(page.getByLabel("생성된 모의면접 프롬프트")).toHaveValue(/면접 유형: 학생부 면접/);
+  await expect(page.getByLabel("생성된 모의면접 프롬프트")).toHaveValue(/생기부가 없거나 제공하지 않겠다고 하면/);
 });
 
 test("data load failure supports retry", async ({ page }) => {
