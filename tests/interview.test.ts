@@ -13,7 +13,7 @@ test("real data: exact Gachon selection contains seven questions, not the case c
   const questions = extractQuestions(selected);
   assert.equal(questions.length, 7);
   assert.ok(questions.some(question => question.text.includes("다익스트라")));
-  const prompt = buildPrompt("가천대학교", "컴퓨터공학전공", "studentRecord", questions);
+  const prompt = buildPrompt(selected, "studentRecord", questions);
   assert.ok(!prompt.includes("야망이 넘치는 지원자"));
   assert.ok(!prompt.includes("시내에서 피켓"));
   assert.ok(prompt.includes("2023학년도 가천대학교 컴퓨터공학전공"));
@@ -51,7 +51,7 @@ test("each interview type keeps shared rules and its own assessment focus", () =
   const questions = extractQuestions([fixture("질문 및 답변 내용\n[질문] 동기는?\n[답변] 이유")]);
   const phrases = { studentRecord: "활동의 동기, 본인의 역할, 과정, 배운 점", passage: "창작 연습용 제시문", character: "태도와 성찰, 의사소통을 중심으로 평가" };
   for (const mode of Object.keys(phrases) as InterviewMode[]) {
-    const prompt = buildPrompt("테스트대학교", "컴퓨터공학과", mode, questions);
+    const prompt = buildPrompt([fixture("")], mode, questions);
     assert.ok(prompt.includes(phrases[mode]));
     assert.ok(prompt.includes("한 번에 하나씩"));
     assert.ok(prompt.includes('"면접 종료"'));
@@ -63,7 +63,7 @@ test("each interview type keeps shared rules and its own assessment focus", () =
 test("all types end with a record check, wait for real material, and allow proceeding without it", () => {
   const questions = extractQuestions([fixture("질문 및 답변 내용\n[질문] 협업 경험은?\n[답변] 다른 학생의 답변")]);
   for (const mode of ["studentRecord", "passage", "character"] as const) {
-    const prompt = buildPrompt("테스트대학교", "컴퓨터공학과", mode, questions);
+    const prompt = buildPrompt([fixture("")], mode, questions);
     const setup = prompt.slice(prompt.indexOf("[면접 시작 전 마지막 확인"));
     assert.ok(prompt.indexOf("[면접 시작 전 마지막 확인") > prompt.indexOf("[참고 면접 질문 끝]"));
     assert.ok(setup.includes("첫 응답에서는 짧게 인사한 뒤"));
@@ -81,9 +81,9 @@ test("all types end with a record check, wait for real material, and allow proce
 
 test("missing selections and empty questions cannot generate an interview", () => {
   const questions = extractQuestions([fixture("질문 및 답변 내용\n[질문] 질문\n[답변] 답")]);
-  assert.equal(buildPrompt("", "학과", "studentRecord", questions), "");
-  assert.equal(buildPrompt("학교", "", "studentRecord", questions), "");
-  assert.equal(buildPrompt("학교", "학과", "studentRecord", []), "");
+  assert.equal(buildPrompt([], "studentRecord", questions), "");
+  assert.equal(buildPrompt([fixture("", { dept: "" })], "studentRecord", questions), "");
+  assert.equal(buildPrompt([fixture("")], "studentRecord", []), "");
   assert.equal(extractQuestions([fixture("면접 절차 및 과정\n면접관 3인\n후배들을 위한 조언\n열심히 준비")]).length, 0);
 });
 
@@ -91,5 +91,22 @@ test("questions use all matching cases beyond one page", () => {
   const records = Array.from({ length: 30 }, (_, i) => fixture(`질문 및 답변 내용\n[질문] 질문 ${i}\n[답변] 답`, { id: String(i) }));
   const questions = extractQuestions(filterCases(records, empty));
   assert.equal(questions.length, 30);
-  assert.ok(buildPrompt("학교", "학과", "passage", questions).includes("30. 질문 29"));
+  assert.ok(buildPrompt(records, "passage", questions).includes("30. 질문 29"));
+});
+
+test("selected reviews preserve university-department pairs and shared question sources", () => {
+  const records = [
+    fixture("질문 및 답변 내용\n[질문] 지원 동기는?\n[답변] 비공개", { id: "A", uni: "가대학교", dept: "물리학과" }),
+    fixture("질문 및 답변 내용\n[질문] 지원동기는?\n[답변] 비공개", { id: "B", uni: "나대학교", dept: "철학과", year: "2025" }),
+  ];
+  const questions = extractQuestions(records);
+  const prompt = buildPrompt(records, "studentRecord", questions);
+  assert.equal(questions.length, 1);
+  assert.equal(questions[0].sources.length, 2);
+  assert.ok(prompt.includes("선택한 면접 후기: 2건"));
+  assert.ok(prompt.includes("2026학년도 가대학교 물리학과 (후기 ID: A)"));
+  assert.ok(prompt.includes("2025학년도 나대학교 철학과 (후기 ID: B)"));
+  assert.ok(!prompt.includes("가대학교 철학과"));
+  assert.ok(prompt.includes("특정 한 곳으로 임의 확정하지 않는다"));
+  assert.ok(prompt.includes("1. 지원 동기는?"));
 });

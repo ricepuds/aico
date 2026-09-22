@@ -117,16 +117,20 @@ export const interviewModes = {
 } as const;
 export type InterviewMode = keyof typeof interviewModes;
 
-export function buildPrompt(university: string, department: string, mode: InterviewMode, questions: ReferenceQuestion[]): string {
-  if (!university.trim() || !department.trim() || !questions.length) return "";
+export function buildPrompt(records: Pick<InterviewCase, "id" | "year" | "uni" | "dept">[], mode: InterviewMode, questions: ReferenceQuestion[]): string {
+  if (!records.length || records.some(record => !record.uni.trim() || !record.dept.trim()) || !questions.length) return "";
+  const selection = records.map(record => `- ${record.year}학년도 ${record.uni} ${record.dept} (후기 ID: ${record.id})`).join("\n");
   const references = questions.map((question, index) => `${index + 1}. ${question.text}\n   (출처: ${[...new Set(question.sources.map(source => `${source.year}학년도 ${source.uni} ${source.dept}`))].join(" / ")})`).join("\n");
   return `너는 대학 입학 면접을 진행하는 전문 면접관이다.
 
-지원 대학: ${university}
-지원 학과: ${department}
+선택한 면접 후기: ${records.length}건
+${selection}
 면접 유형: ${interviewModes[mode].label}
 
 아래 면접 질문 데이터를 참고하여 실제 대학 면접처럼 나와 모의면접을 진행해라.
+사례집에서는 체크한 후기만 참고 자료로 사용한다. 여러 대학·학과의 후기를 선택했다면 각 대학·학과를 별개의 연습 대상으로 구분하고, 특정 한 곳으로 임의 확정하지 않는다.
+선택한 대학·학과의 질문을 균형 있게 활용하되, 특정 대학·학과에 해당하는 질문은 그 대상을 명시한다. 대학별 지원 동기나 전공 지식, 활동 맥락을 다른 대학·학과와 혼동하지 않는다. 내가 연습 대상을 지정하면 선택 범위 안에서 그 대상을 우선한다.
+같은 질문은 중복하여 묻지 않되 함께 표시된 모든 출처를 보존한다. 선택되지 않은 후기를 사용했다고 주장하지 않는다.
 
 [선택한 면접 유형별 진행 방식]
 ${interviewModes[mode].instruction}

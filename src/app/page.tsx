@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { filterCases, normalize, type Filters } from "@/lib/interview";
+import { filterCases, normalize, type Filters, type InterviewMode } from "@/lib/interview";
 import { useCaseDetails, type CaseSummary } from "@/lib/case-data";
 import { MockInterview } from "@/components/mock-interview";
 import { CaseContent } from "@/components/case-content";
@@ -21,6 +21,7 @@ export default function Home() {
   const [filters, setFilters] = useState<Filters>(initialFilters);
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [mode, setMode] = useState<InterviewMode>("studentRecord");
   const [detail, setDetail] = useState<CaseSummary | null>(null);
   const [help, setHelp] = useState(false);
 
@@ -41,15 +42,12 @@ export default function Home() {
   const universities = useMemo(() => unique(cases.map(record => record.uni)), [cases]);
   const university = universities.find(name => normalize(name) === normalize(filters.university)) || "";
   const departments = useMemo(() => unique(cases.filter(record => !university || record.uni === university).map(record => record.dept)), [cases, university]);
-  const department = departments.find(name => normalize(name) === normalize(filters.department)) || "";
   const filtered = useMemo(() => filterCases(cases, filters), [cases, filters]);
-  // Full filtered collection, never the current page or the print selection.
-  const references = useMemo(() => university && department ? filtered.filter(record => record.uni === university && record.dept === department) : [], [filtered, university, department]);
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
   const currentPage = Math.min(page, pageCount);
   const visible = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
-  const printSelection = useMemo(() => cases.filter(record => selected.has(record.id)), [cases, selected]);
-  const printDetails = useCaseDetails(printSelection);
+  const selectedCases = useMemo(() => cases.filter(record => selected.has(record.id)), [cases, selected]);
+  const printDetails = useCaseDetails(selectedCases);
   const detailSelection = useMemo(() => detail ? [detail] : [], [detail]);
   const detailData = useCaseDetails(detailSelection);
   const regions = useMemo(() => unique(cases.map(record => record.region)), [cases]);
@@ -74,15 +72,16 @@ export default function Home() {
       </section>
       <div className="workspace"><section id="results" className="results" aria-labelledby="results-title" aria-busy={loading}><div className="results-heading"><h2 id="results-title"><span className="step-number">02</span> 면접 후기 <span className="result-number">{format(filtered.length)}</span></h2><span className="result-meta">{resultUniversities}개 대학 · {resultDepartments}개 학과</span></div>
         <div className="print-toolbar"><label className="select-all"><input type="checkbox" checked={filtered.length > 0 && filtered.every(record => selected.has(record.id))} disabled={!filtered.length} onChange={event => { const checked = event.target.checked; setSelected(previous => { const next = new Set(previous); filtered.forEach(record => { if (checked) next.add(record.id); else next.delete(record.id); }); return next; }); }} />검색 결과 전체 선택</label><div><button className="text-button" disabled={!selected.size} onClick={() => setSelected(new Set())}>선택 해제</button><button className="btn btn-small" disabled={!selected.size || printDetails.loading || Boolean(printDetails.error)} onClick={() => window.print()}>선택 {selected.size}건 인쇄</button></div></div>
+        <p className="muted">체크한 후기를 모의면접과 인쇄에 사용합니다. 여러 후기 선택 가능 · 검색·페이지 변경 시 선택 유지</p>
         {printDetails.loading && <p role="status">인쇄할 후기를 준비하고 있습니다.</p>}
         {printDetails.error && <p role="alert">{printDetails.error} <button className="btn" onClick={printDetails.retry}>인쇄 자료 다시 불러오기</button></p>}
-        {loading ? <div className="empty-state" role="status"><span className="loader" />면접 후기를 불러오고 있습니다.</div> : error ? <div className="empty-state" role="alert"><h3>{error}</h3><button className="btn" onClick={() => setAttempt(value => value + 1)}>다시 불러오기</button></div> : !filtered.length ? <div className="empty-state"><span className="empty-icon" aria-hidden="true">⌕</span><h3>조건에 맞는 후기가 없습니다.</h3><p>대학·학과 이름을 확인하거나 학년도를 ‘전체’로 바꿔 보세요.</p><button className="btn" onClick={() => { setFilters(initialFilters); setPage(1); }}>검색 초기화</button></div> : <div className="case-list">{visible.map(record => <article className={`case-card ${selected.has(record.id) ? "selected" : ""}`} key={record.id}><div className="case-select"><input type="checkbox" aria-label={`${record.uni} ${record.dept} ${record.id} 인쇄 선택`} checked={selected.has(record.id)} onChange={() => toggleRecord(record.id)} /></div><div className="case-main"><div className="case-tags"><span className="year-tag">{record.year}학년도</span><span>{record.region}</span><span>{record.field}</span></div><h3>{record.uni}</h3><p className="department-name">{record.dept}</p><p className="case-description">{record.name || record.type} · {interviewLabel(record.interview)}</p><div className="case-bottom"><span>참고 질문 <b>{record.questionCount}개</b></span><button className="detail-button" onClick={() => setDetail(record)}>후기 자세히 보기 <span aria-hidden="true">↗</span></button></div></div></article>)}</div>}
+        {loading ? <div className="empty-state" role="status"><span className="loader" />면접 후기를 불러오고 있습니다.</div> : error ? <div className="empty-state" role="alert"><h3>{error}</h3><button className="btn" onClick={() => setAttempt(value => value + 1)}>다시 불러오기</button></div> : !filtered.length ? <div className="empty-state"><span className="empty-icon" aria-hidden="true">⌕</span><h3>조건에 맞는 후기가 없습니다.</h3><p>대학·학과 이름을 확인하거나 학년도를 ‘전체’로 바꿔 보세요.</p><button className="btn" onClick={() => { setFilters(initialFilters); setPage(1); }}>검색 초기화</button></div> : <div className="case-list">{visible.map(record => <article className={`case-card ${selected.has(record.id) ? "selected" : ""}`} key={record.id}><div className="case-select"><input type="checkbox" aria-label={`${record.uni} ${record.dept} ${record.id} 모의면접·인쇄 선택`} checked={selected.has(record.id)} onChange={() => toggleRecord(record.id)} /></div><div className="case-main"><div className="case-tags"><span className="year-tag">{record.year}학년도</span><span>{record.region}</span><span>{record.field}</span></div><h3>{record.uni}</h3><p className="department-name">{record.dept}</p><p className="case-description">{record.name || record.type} · {interviewLabel(record.interview)}</p><div className="case-bottom"><span>참고 질문 <b>{record.questionCount}개</b></span><button className="detail-button" onClick={() => setDetail(record)}>후기 자세히 보기 <span aria-hidden="true">↗</span></button></div></div></article>)}</div>}
         {!loading && filtered.length > 0 && <nav className="pagination" aria-label="면접 후기 페이지"><button className="btn" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>← 이전</button><span>{currentPage} <span className="muted">/ {pageCount}</span></span><button className="btn" disabled={currentPage === pageCount} onClick={() => setPage(currentPage + 1)}>다음 →</button></nav>}
-      </section><MockInterview key={JSON.stringify(filters)} university={university} department={department} cases={references} /></div>
+      </section><MockInterview key={JSON.stringify(selectedCases.map(record => record.id))} cases={selectedCases} mode={mode} onModeChange={setMode} /></div>
       <footer className="footer"><p>ⓒ 본 자료의 저작권은 <b>충북교육청 대입지원단</b>에 있습니다.<br />학교 교육 활동 목적 외 무단 복제·배포·게시를 금지합니다.</p><a href="https://interview-cases-xi.vercel.app/" target="_blank" rel="noopener noreferrer">원본 자료실 · 담당자 문의 ↗</a></footer>
     </main>
     <div className="print-area">{printDetails.data.map(record => <article className="print-case" key={record.id}><p>충북교육청 면접후기 사례집 · {record.year}학년도</p><h1>{record.uni} · {record.dept}</h1><p>{record.type} · {record.name} · {interviewLabel(record.interview)}</p><CaseContent record={record} /><small>ⓒ 충북교육청 대입지원단 · 학교 교육 활동 목적 외 무단 복제·배포·게시 금지</small></article>)}</div>
-    {detail && <Modal title={`${detail.uni} · ${detail.dept}`} onClose={() => setDetail(null)} wide><p className="modal-description">{detail.year}학년도 · {detail.name} · {interviewLabel(detail.interview)}</p>{detailData.loading && <p role="status">후기 본문을 불러오고 있습니다.</p>}{detailData.error && <p role="alert">{detailData.error} <button className="btn" onClick={detailData.retry}>본문 다시 불러오기</button></p>}{detailData.data[0] && <CaseContent record={detailData.data[0]} />}<div className="modal-actions"><button className="btn btn-dark" onClick={() => toggleRecord(detail.id)}>{selected.has(detail.id) ? "인쇄 선택 해제" : "인쇄할 후기로 선택"}</button></div></Modal>}
-    {help && <Modal title="면접 준비실 이용 안내" onClose={() => setHelp(false)}><ol className="help-steps"><li><b>대학과 학과를 찾아보세요.</b><p>일부 이름으로 후기를 검색할 수 있습니다. AI 모의면접은 목록에 있는 정확한 대학·학과 이름을 선택해 주세요.</p></li><li><b>연습할 면접 유형을 선택하세요.</b><p>학생부·제시문·기본인성 면접 중 선택하세요. 유형에 맞춰 활동과 탐구 경험, 자료 해석, 협업과 가치관을 연습할 수 있습니다.</p></li><li><b>복사한 프롬프트를 ChatGPT에 붙여넣으세요.</b><p>시작 버튼은 프롬프트를 복사하고 ChatGPT를 엽니다. 본인 계정으로 로그인하고 붙여넣어 전송해 주세요. ChatGPT가 먼저 생기부 유무를 확인합니다. 있으면 파일이나 내용을 제공해 생기부와 사례집으로, 없으면 ‘없어요’라고 답해 사례집으로 면접을 진행하세요. 끝낼 때는 ‘면접 종료’라고 말하세요.</p></li><li><b>필요한 후기는 골라서 인쇄하세요.</b><p>후기 왼쪽의 선택 상자를 누르고 ‘선택 건 인쇄’를 사용하세요. AI 프롬프트에는 인쇄 선택과 관계없이 현재 조건에 맞는 모든 질문이 포함됩니다.</p></li></ol><p className="muted">과거 후기와 AI 피드백은 연습용 참고 자료입니다. 실제 입학 전형은 대학의 최신 모집요강을 확인해 주세요.</p></Modal>}
+    {detail && <Modal title={`${detail.uni} · ${detail.dept}`} onClose={() => setDetail(null)} wide><p className="modal-description">{detail.year}학년도 · {detail.name} · {interviewLabel(detail.interview)}</p>{detailData.loading && <p role="status">후기 본문을 불러오고 있습니다.</p>}{detailData.error && <p role="alert">{detailData.error} <button className="btn" onClick={detailData.retry}>본문 다시 불러오기</button></p>}{detailData.data[0] && <CaseContent record={detailData.data[0]} />}<div className="modal-actions"><button className="btn btn-dark" onClick={() => toggleRecord(detail.id)}>{selected.has(detail.id) ? "후기 선택 해제" : "모의면접·인쇄에 사용할 후기로 선택"}</button></div></Modal>}
+    {help && <Modal title="면접 준비실 이용 안내" onClose={() => setHelp(false)}><ol className="help-steps"><li><b>대학과 학과를 찾아보세요.</b><p>일부 이름으로 후기를 검색할 수 있습니다. 후기 왼쪽 체크박스를 누르면 AI 모의면접에 반영됩니다. 여러 대학·학과의 후기를 함께 선택할 수 있으며 검색과 페이지를 바꿔도 선택은 유지됩니다.</p></li><li><b>연습할 면접 유형을 선택하세요.</b><p>학생부·제시문·기본인성 면접 중 선택하세요. 유형에 맞춰 활동과 탐구 경험, 자료 해석, 협업과 가치관을 연습할 수 있습니다.</p></li><li><b>복사한 프롬프트를 ChatGPT에 붙여넣으세요.</b><p>시작 버튼은 프롬프트를 복사하고 ChatGPT를 엽니다. 본인 계정으로 로그인하고 붙여넣어 전송해 주세요. ChatGPT가 먼저 생기부 유무를 확인합니다. 있으면 파일이나 내용을 제공해 생기부와 사례집으로, 없으면 ‘없어요’라고 답해 사례집으로 면접을 진행하세요. 끝낼 때는 ‘면접 종료’라고 말하세요.</p></li><li><b>필요한 후기는 골라서 인쇄하세요.</b><p>후기 왼쪽의 선택 상자를 누르고 ‘선택 건 인쇄’를 사용하세요. 모의면접과 인쇄는 같은 선택 후기를 사용합니다. AI 프롬프트에는 체크한 후기의 질문만 포함되며, 같은 질문은 중복을 제외하고 모든 출처를 표시합니다. ‘선택 해제’를 누르면 전체 선택이 비워집니다.</p></li></ol><p className="muted">과거 후기와 AI 피드백은 연습용 참고 자료입니다. 실제 입학 전형은 대학의 최신 모집요강을 확인해 주세요.</p></Modal>}
   </>;
 }

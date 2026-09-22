@@ -4,7 +4,8 @@ async function selectGachon(page: Page) {
   await page.goto("/");
   await expect(page.getByRole("heading", { name: /면접 후기 1,878/ })).toBeVisible();
   await page.getByLabel("대학 이름", { exact: true }).fill("가천대학교");
-  await page.getByLabel("학과 이름", { exact: true }).fill("컴퓨터공학전공");
+  await page.getByLabel("학과 이름", { exact: true }).fill("컴퓨터공");
+  await page.locator(".case-card").getByRole("checkbox").check();
   await expect(page.getByTestId("question-count")).toHaveText("7");
 }
 
@@ -65,7 +66,7 @@ test("blocked popup still copies and offers a direct link", async ({ page, conte
   await expect(page.getByRole("link", { name: "ChatGPT에서 시작 ↗" })).toHaveAttribute("href", "https://chatgpt.com/");
 });
 
-test("filter changes invalidate stale selections; modes, details and printing work", async ({ page }) => {
+test("checked selections survive filters; modes, details and printing work", async ({ page }) => {
   await selectGachon(page);
   await page.getByRole("radio", { name: /기본인성 면접/ }).check();
   await page.getByRole("button", { name: "프롬프트 미리보기" }).click();
@@ -73,7 +74,7 @@ test("filter changes invalidate stale selections; modes, details and printing wo
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "후기 자세히 보기" }).click();
   await expect(page.getByRole("dialog")).toContainText("다익스트라");
-  await page.getByRole("button", { name: "인쇄할 후기로 선택" }).click();
+  await expect(page.getByRole("button", { name: "후기 선택 해제", exact: true })).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(page.getByRole("button", { name: "선택 1건 인쇄" })).toBeEnabled();
   await page.emulateMedia({ media: "print" });
@@ -82,8 +83,8 @@ test("filter changes invalidate stale selections; modes, details and printing wo
   await expect(page.locator(".ai-card")).toBeHidden();
   await page.emulateMedia({ media: "screen" });
   await page.getByRole("button", { name: "2026", exact: true }).click();
-  await expect(page.getByTestId("question-count")).toHaveText("0");
-  await expect(page.getByRole("button", { name: "ChatGPT로 모의면접 시작" })).toBeDisabled();
+  await expect(page.getByTestId("question-count")).toHaveText("7");
+  await expect(page.getByRole("button", { name: "ChatGPT로 모의면접 시작" })).toBeEnabled();
   await expect(page.getByText("조건에 맞는 후기가 없습니다.", { exact: true })).toBeVisible();
   await page.getByLabel("대학 이름", { exact: true }).fill("존재하지 않는 대학");
   await expect(page.getByLabel("학과 이름", { exact: true })).toHaveValue("");
@@ -152,7 +153,7 @@ test("detail request failure can be retried without reloading the list", async (
   await expect(page.locator(".case-card")).toHaveCount(12);
 });
 
-test("changing filters during loading discards stale interview questions", async ({ page }) => {
+test("clearing checked cases during loading discards stale interview questions", async ({ page }) => {
   let release!: () => void;
   const gate = new Promise<void>(resolve => { release = resolve; });
   await page.route("**/data/details/**", async route => { await gate; await route.continue(); });
@@ -160,9 +161,52 @@ test("changing filters during loading discards stale interview questions", async
   await expect(page.locator(".case-card")).toHaveCount(12);
   await page.getByLabel("대학 이름", { exact: true }).fill("가천대학교");
   await page.getByLabel("학과 이름", { exact: true }).fill("컴퓨터공학전공");
-  await expect(page.getByRole("status")).toContainText("모의면접 질문을 불러오고 있습니다");
+  await page.locator(".case-card").getByRole("checkbox").check();
+  await expect(page.locator(".ai-card").getByRole("status")).toContainText("모의면접 질문을 불러오고 있습니다");
   await page.getByLabel("대학 이름", { exact: true }).fill("존재하지 않는 대학");
+  await page.getByRole("button", { name: "선택 해제", exact: true }).click();
   release();
   await expect(page.getByTestId("question-count")).toHaveText("0");
+  await expect(page.getByRole("button", { name: "ChatGPT로 모의면접 시작" })).toBeDisabled();
+});
+
+test("checkboxes combine reviews across pages and filters, excluding unchecked reviews", async ({ page }) => {
+  const file = "details/aaaaaaaaaaaaaaaaaaaaaaaa.json";
+  const records = Array.from({ length: 14 }, (_, i) => ({
+    id: `review-${i}`, year: "2026", volume: 1,
+    uni: i === 13 ? "나대학교" : "가대학교", dept: i === 13 ? "철학과" : "물리학과",
+    type: "학종", name: "일반", region: "수도권", field: "인문", interview: "생기부",
+    content: `질문 및 답변 내용\n[질문] 공통 질문입니다?\n[답변] 비공개\n[질문] 고유 질문 ${i}번?\n[답변] 비공개`,
+  }));
+  await page.route("**/data/index.json", route => route.fulfill({ json: records.map(record => ({ ...record, content: "", questionCount: 2, dataFile: file })) }));
+  await page.route("**/data/details/**", route => route.fulfill({ json: records }));
+  await page.goto("/");
+  await expect(page.locator(".case-card")).toHaveCount(12);
+  await page.getByRole("radio", { name: /기본인성 면접/ }).check();
+  await expect(page.getByRole("button", { name: "ChatGPT로 모의면접 시작" })).toBeDisabled();
+  await page.locator(".case-card").getByRole("checkbox").first().check();
+  await expect(page.getByTestId("question-count")).toHaveText("2");
+  await page.getByRole("button", { name: "다음 →" }).click();
+  await page.getByRole("checkbox", { name: /review-13 모의면접/ }).check();
+  await expect(page.getByTestId("selected-case-count")).toHaveText("2건");
+  await expect(page.getByTestId("question-count")).toHaveText("3");
+  await page.getByRole("button", { name: "프롬프트 미리보기" }).click();
+  const prompt = await page.getByLabel("생성된 모의면접 프롬프트").inputValue();
+  expect(prompt).toContain("면접 유형: 기본인성 면접");
+  expect(prompt).toContain("가대학교 물리학과 (후기 ID: review-0)");
+  expect(prompt).toContain("나대학교 철학과 (후기 ID: review-13)");
+  expect(prompt).toContain("고유 질문 0번?");
+  expect(prompt).toContain("고유 질문 13번?");
+  expect(prompt).not.toContain("고유 질문 1번?");
+  expect(prompt.match(/공통 질문입니다\?/g)).toHaveLength(1);
+  expect(prompt).not.toContain("비공개");
+  await page.keyboard.press("Escape");
+  await page.getByLabel("대학 이름", { exact: true }).fill("나대");
+  await expect(page.getByTestId("selected-case-count")).toHaveText("2건");
+  await page.getByLabel("검색 결과 전체 선택").uncheck();
+  await expect(page.getByTestId("selected-case-count")).toHaveText("1건");
+  await expect(page.getByTestId("question-count")).toHaveText("2");
+  await page.getByRole("button", { name: "선택 해제", exact: true }).click();
+  await expect(page.getByTestId("selected-case-count")).toHaveText("0건");
   await expect(page.getByRole("button", { name: "ChatGPT로 모의면접 시작" })).toBeDisabled();
 });
