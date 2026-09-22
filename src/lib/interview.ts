@@ -11,7 +11,7 @@ export interface Filters {
 }
 
 // Mirrors the original site's whitespace-insensitive substring filters.
-export function filterCases(cases: InterviewCase[], filters: Filters) {
+export function filterCases<T extends InterviewCase>(cases: T[], filters: Filters) {
   const uni = normalize(filters.university);
   const dept = normalize(filters.department);
   return cases.filter(record =>

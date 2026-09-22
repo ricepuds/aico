@@ -111,10 +111,49 @@ test("mobile controls and preview fit without horizontal overflow", async ({ pag
 
 test("data load failure supports retry", async ({ page }) => {
   let fail = true;
-  await page.route("**/data/cases.json", route => fail ? route.fulfill({ status: 503, body: "unavailable" }) : route.continue());
+  await page.route("**/data/index.json", route => fail ? route.fulfill({ status: 503, body: "unavailable" }) : route.continue());
   await page.goto("/");
   await expect(page.locator("#results").getByRole("alert")).toContainText("질문 자료를 불러오지 못했습니다");
   fail = false;
   await page.getByRole("button", { name: "다시 불러오기" }).click();
   await expect(page.getByRole("heading", { name: /면접 후기 1,878/ })).toBeVisible();
+});
+
+test("initial load and pagination use only the compact index", async ({ page }) => {
+  const requests: string[] = [];
+  page.on("request", request => { if (request.url().includes("/data/")) requests.push(request.url()); });
+  await page.goto("/");
+  await expect(page.locator(".case-card")).toHaveCount(12);
+  await page.getByRole("button", { name: "다음 →" }).click();
+  await expect(page.getByRole("navigation", { name: "면접 후기 페이지" })).toContainText("2");
+  expect(requests.every(url => url.endsWith("/data/index.json"))).toBe(true);
+  const index = await page.request.get("/data/index.json");
+  expect((await index.body()).byteLength).toBeLessThan(600_000);
+});
+
+test("detail request failure can be retried without reloading the list", async ({ page }) => {
+  let fail = true;
+  await page.route("**/data/details/**", route => fail ? route.fulfill({ status: 503 }) : route.continue());
+  await page.goto("/");
+  await page.getByRole("button", { name: "후기 자세히 보기" }).first().click();
+  await expect(page.getByRole("dialog").getByRole("alert")).toContainText("후기 본문을 불러오지 못했습니다");
+  fail = false;
+  await page.getByRole("button", { name: "본문 다시 불러오기" }).click();
+  await expect(page.getByRole("dialog").locator(".case-content")).toBeVisible();
+  await expect(page.locator(".case-card")).toHaveCount(12);
+});
+
+test("changing filters during loading discards stale interview questions", async ({ page }) => {
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  await page.route("**/data/details/**", async route => { await gate; await route.continue(); });
+  await page.goto("/");
+  await expect(page.locator(".case-card")).toHaveCount(12);
+  await page.getByLabel("대학 이름", { exact: true }).fill("가천대학교");
+  await page.getByLabel("학과 이름", { exact: true }).fill("컴퓨터공학전공");
+  await expect(page.getByRole("status")).toContainText("모의면접 질문을 불러오고 있습니다");
+  await page.getByLabel("대학 이름", { exact: true }).fill("존재하지 않는 대학");
+  release();
+  await expect(page.getByTestId("question-count")).toHaveText("0");
+  await expect(page.getByRole("button", { name: "ChatGPT로 모의면접 시작" })).toBeDisabled();
 });

@@ -1,15 +1,17 @@
 "use client";
 import { useMemo, useState } from "react";
-import { buildPrompt, extractQuestions, interviewModes, type InterviewCase, type InterviewMode } from "@/lib/interview";
+import { buildPrompt, extractQuestions, interviewModes, type InterviewMode } from "@/lib/interview";
+import { useCaseDetails, type CaseSummary } from "@/lib/case-data";
 import { copyText } from "@/lib/clipboard";
 import { Modal } from "./modal";
 
-export function MockInterview({ university, department, cases }: { university: string; department: string; cases: InterviewCase[] }) {
+export function MockInterview({ university, department, cases }: { university: string; department: string; cases: CaseSummary[] }) {
   const [mode, setMode] = useState<InterviewMode>("basic");
   const [preview, setPreview] = useState(false);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<{ text: string; error: boolean; link?: boolean } | null>(null);
-  const questions = useMemo(() => extractQuestions(cases), [cases]);
+  const details = useCaseDetails(cases);
+  const questions = useMemo(() => extractQuestions(details.data), [details.data]);
   const prompt = useMemo(() => buildPrompt(university, department, mode, questions), [university, department, mode, questions]);
   const ready = Boolean(prompt);
 
@@ -61,7 +63,9 @@ export function MockInterview({ university, department, cases }: { university: s
         <span><b>{interviewModes[key].label}</b><small>{interviewModes[key].description}</small></span>
       </label>)}
     </fieldset>
-    {!ready && <p className="empty-hint">{!university || !department ? "대학과 학과를 검색 목록의 이름으로 선택하면 시작할 수 있어요." : "현재 조건에 참고할 질문이 없습니다. 학년도나 검색 조건을 바꿔 주세요."}</p>}
+    {details.loading && <p role="status">모의면접 질문을 불러오고 있습니다.</p>}
+    {details.error && <p role="alert">{details.error} <button className="btn" onClick={details.retry}>질문 다시 불러오기</button></p>}
+    {!ready && !details.loading && !details.error && <p className="empty-hint">{!university || !department ? "대학과 학과를 검색 목록의 이름으로 선택하면 시작할 수 있어요." : "현재 조건에 참고할 질문이 없습니다. 학년도나 검색 조건을 바꿔 주세요."}</p>}
     <button className="start-button" onClick={() => void copy(true)} disabled={!ready || busy}>{busy ? "프롬프트 복사 중…" : "ChatGPT로 모의면접 시작"}<span aria-hidden="true">↗</span></button>
     <div className="secondary-actions"><button onClick={() => setPreview(true)} disabled={!ready || busy}>프롬프트 미리보기</button><button onClick={() => void copy(false)} disabled={!ready || busy}>프롬프트 복사</button></div>
     <p className="api-note">별도의 OpenAI API를 사용하지 않습니다. 본인의 ChatGPT 계정에서 모의면접이 진행됩니다.</p>
